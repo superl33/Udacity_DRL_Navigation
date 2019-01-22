@@ -5,8 +5,7 @@ from collections import namedtuple, deque
 from model import QNetwork
 
 import torch
-import torch.nn
-import torch.nn.functional as F
+import torch.nn as nn
 import torch.optim as optim
 
 BUFFER_SIZE = int(1e5)  # replay buffer size
