@@ -12,7 +12,7 @@ import torch.optim as optim
 BUFFER_SIZE = int(1e5)  # replay buffer size
 BATCH_SIZE = 64         # minibatch size
 GAMMA = 0.99            # discount factor
-TAU = 1e-3              # for soft update of target parameters
+TAU = 1e-2              # for soft update of target parameters
 LR = 1e-3               # learning rate 
 UPDATE_EVERY = 4        # how often to update the network
 EPS = 1e-6              # define a very small value
@@ -92,9 +92,14 @@ class Agent():
         ## TODO: compute and minimize the loss
 
         # Get max predicted Q values (for next states) from target model
-        Q_targets_next = self.qnetwork_target.forward(next_states).detach().max(1)[0].unsqueeze(1)
-        # Compute Q targets for current states 
-        Q_targets = rewards + (gamma * Q_targets_next * (1 - dones))
+        ### Regular DQN
+        # Q_targets_next = self.qnetwork_target.forward(next_states).detach().max(1)[0].unsqueeze(1)
+        ### Double DQN
+        with torch.no_grad():
+            estimated_action = self.qnetwork_local(next_states).argmax(dim=1, keepdim=True)
+            Q_targets_next = self.qnetwork_target.forward(next_states).gather(1, estimated_action)
+            # Compute Q targets for current states
+            Q_targets = rewards + (gamma * Q_targets_next * (1 - dones))
 
         # Get expected Q values from local model
         Q_expected = self.qnetwork_local.forward(states).gather(1, actions)
@@ -104,9 +109,9 @@ class Agent():
         # Compute loss
         loss_fn = nn.MSELoss(reduce=False)
         loss = loss_fn(Q_expected, Q_targets)
-        weighted_loss = torch.mean(torch.from_numpy(weightsIS).float() * loss) 
+        weighted_loss = torch.sum(torch.from_numpy(weightsIS).float().to(device) * loss)
         # Update priority according to TD error
-        self.memory.update_priority(list(loss.detach().numpy().squeeze()**ALPHA+EPS), index)
+        self.memory.update_priority(list(loss.detach().cpu().numpy().squeeze()**ALPHA+EPS), index)
         
         # Minimize the loss
         self.optimizer.zero_grad()
@@ -158,14 +163,17 @@ class ReplayBufferWithPriority:
     
     def sample(self):
         """Randomly sample a batch of experiences, its index and importance-sampling weights from memory by priority."""
-        probs = np.array([p/sum(self.priority) for p in self.priority], dtype='float').round(5) # truncate the precision
-        probs[-1] = 1.0 - sum(probs[:-1])
-        assert sum(probs)==1, "probs is not sum up to 1 as {}".format(sum(probs)) # numpy issue- floatvalue with high precisionnot not sum to 1
+        # probs = np.array([p/sum(self.priority) for p in self.priority], dtype='float').round(5) # truncate the precision
+        # probs[-1] = 1.0 - sum(probs[:-1])
+        # assert sum(probs)==1, "probs is not sum up to 1 as {}".format(sum(probs)) # numpy issue- floatvalue with high precisionnot not sum to 1
         
-        index = np.random.choice(range(self.__len__()), size=self.batch_size, p=probs)
-        
-        weightsIS   = [(self.__len__()*probs[i])**(-BETA) for i in index]
-        weightsIS   = np.array([w / max(weightsIS) for w in weightsIS]).reshape((-1, 1)) # normalize by max
+        index = np.random.choice(range(self.__len__()), size=self.batch_size)
+        priorityArray = np.array(self.priority, dtype='float')
+        norm_prob = priorityArray[index]
+        norm_prob = norm_prob / sum(norm_prob)
+        weightsIS   = (self.__len__()*norm_prob)**(-BETA)
+        weightsIS = np.array(weightsIS) / max(weightsIS)  # normalize by max
+
         states = torch.from_numpy(np.vstack([self.memory[i].state for i in index])).float().to(device)
         actions = torch.from_numpy(np.vstack([self.memory[i].action for i in index])).long().to(device)
         rewards = torch.from_numpy(np.vstack([self.memory[i].reward for i in index])).float().to(device)
