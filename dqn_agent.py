@@ -5,8 +5,8 @@ from collections import namedtuple, deque
 from model import QNetwork
 
 import torch
-import torch.nn
-import torch.nn.functional as F
+import torch.nn as nn
+# import torch.nn.functional as F
 import torch.optim as optim
 
 BUFFER_SIZE = int(1e5)  # replay buffer size
@@ -152,7 +152,7 @@ class ReplayBufferWithPriority:
         self.batch_size = batch_size
         self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
         self.seed = random.seed(seed)
-        self.priority = []
+        self.priority = deque(maxlen=buffer_size)
     
     def add(self, state, action, reward, next_state, done):
         """Add a new experience to memory."""
@@ -163,9 +163,6 @@ class ReplayBufferWithPriority:
     
     def sample(self):
         """Randomly sample a batch of experiences, its index and importance-sampling weights from memory by priority."""
-        # probs = np.array([p/sum(self.priority) for p in self.priority], dtype='float').round(5) # truncate the precision
-        # probs[-1] = 1.0 - sum(probs[:-1])
-        # assert sum(probs)==1, "probs is not sum up to 1 as {}".format(sum(probs)) # numpy issue- floatvalue with high precisionnot not sum to 1
         
         index = np.random.choice(range(self.__len__()), size=self.batch_size)
         priorityArray = np.array(self.priority, dtype='float')
